@@ -1,0 +1,60 @@
+---
+- hosts: splunk-server
+  become: yes
+
+  vars:
+    splunk_version: "8.2.3"
+    splunk_package: "splunk-{{ splunk_version }}-linux-2.6-amd64.deb"
+    splunk_url: "https://download.splunk.com/products/splunk/releases/{{ splunk_version }}/linux/{{ splunk_package }}"
+
+  tasks:
+    - name: Instalar pacotes necessários
+      apt:
+        name:
+          - wget
+          - python
+
+    - name: Fazer download do pacote Splunk
+      get_url:
+        url: "{{ splunk_url }}"
+        dest: "/tmp/{{ splunk_package }}"
+
+    - name: Instalar o pacote Splunk
+      apt:
+        deb: "/tmp/{{ splunk_package }}"
+
+    - name: Iniciar o serviço Splunk
+      service:
+        name: splunk
+        state: started
+
+    - name: Criar regra de segurança no Security Group
+      ec2_group:
+        name: splunk-sg
+        region: "{{ aws_region }}"
+        state: present
+        description: "Security group for Splunk server"
+        rules:
+          - proto: tcp
+            from_port: 22
+            to_port: 22
+            cidr_ip: 0.0.0.0/0
+          - proto: tcp
+            from_port: 8000
+            to_port: 8000
+            cidr_ip: 0.0.0.0/0
+
+    - name: Obter informações da instância EC2
+      ec2_instance_info:
+        region: "{{ aws_region }}"
+        filters:
+          "tag:Name": "splunk-server"
+      register: ec2_info
+
+    - name: Adicionar tag ao recurso EC2
+      ec2_tag:
+        region: "{{ aws_region }}"
+        resource: "{{ ec2_info.instances[0].id }}"
+        state: present
+        tags:
+          Name: splunk-server
